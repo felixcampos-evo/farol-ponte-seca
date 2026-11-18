@@ -1,0 +1,265 @@
+<!DOCTYPE html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>Farol Ponta Seca</title><style>
+:root{color-scheme:dark;--ac:#7fd6ff;--bg:#030612;--tx:#e8f0ff;box-sizing:border-box}
+*{box-sizing:border-box}html,body{margin:0;height:100%;background:var(--bg);color:var(--tx);overflow:hidden;font-family:system-ui,-apple-system,"Segoe UI",sans-serif}
+canvas{position:fixed;inset:0;width:100%;height:100%}
+#hud{position:fixed;left:12px;top:calc(env(safe-area-inset-top,0px) + 10px);font:600 13px system-ui;opacity:.85;text-shadow:0 1px 4px #000}
+#bub{position:fixed;left:50%;top:calc(env(safe-area-inset-top,0px) + 40px);transform:translateX(-50%) scale(.9);width:min(90vw,420px);opacity:0;transition:.25s;pointer-events:none}
+#bub.on{opacity:1;transform:translateX(-50%) scale(1);pointer-events:auto}
+#bb{position:relative;background:#f4f7ff;color:#101522;border-radius:50%/46%;padding:30px 42px;text-align:center;font:600 15px/1.35 system-ui,sans-serif;min-height:92px;display:flex;align-items:center;justify-content:center;box-shadow:0 6px 30px #000a}
+#bb:after{content:"";position:absolute;bottom:-17px;left:50%;margin-left:-14px;border:14px solid transparent;border-top:20px solid #f4f7ff;border-bottom:0}
+#nm{position:absolute;top:-13px;left:50%;transform:translateX(-50%);background:#0b1220;color:var(--ac);padding:3px 14px;border-radius:99px;font:700 12px system-ui;border:1px solid #2b4263;white-space:nowrap}
+#bub.weird #bb{animation:j .12s infinite;background:#eadfe3}
+@keyframes j{0%{transform:translate(1px,0)}50%{transform:translate(-1px,1px)}100%{transform:translate(0,-1px)}}
+#ch{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(env(safe-area-inset-bottom,0px) + 12px);width:min(94vw,520px);display:flex;flex-direction:column;gap:6px}
+#ch button,.big{background:#121c2fe6;color:var(--tx);border:1px solid #2b4263;border-radius:14px;padding:9px 14px;font:500 14px system-ui;cursor:pointer;text-align:left}
+#ch button:hover,.big:hover{background:#1c2c4a}#ch .ok{border-color:#4ade80}#ch .no{border-color:#ff6b6b}
+.ov{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;gap:14px;padding:24px;background:#030612b8}
+.ov h1{margin:0;font:800 clamp(30px,8vw,60px) Georgia,serif;letter-spacing:.08em}.ov p{max-width:440px;margin:0;opacity:.85;line-height:1.5}.big{text-align:center;font-size:16px;padding:12px 28px}
+</style></head><body>
+<canvas id="c"></canvas><div id="hud"></div>
+<div id="bub"><div id="bb"><span id="nm"></span><span id="tx"></span></div></div><div id="ch"></div>
+<div class="ov" id="ttl"><h1>FAROL PONTA SECA</h1><p>Você é Ícaro, o novo vigia. Barcos pedem passagem pela costa. Converse, observe o rosto, a voz e o barco. Libere os comuns. Barre as anomalias.</p><button class="big" id="go">Começar a vigia</button></div>
+<div class="ov" id="end" style="display:none"><h1 id="et"></h1><p id="ep"></p><button class="big" onclick="location.reload()">Jogar de novo</button></div>
+<script>
+const $=s=>document.querySelector(s),cv=$("#c"),g=cv.getContext("2d"),bub=$("#bub"),txt=$("#tx"),nm=$("#nm"),ch=$("#ch");
+let W,H,D=1,T=0,scene="dock",boat=null,shake=0,glitch=0,fade=1,fog=0,err=0,tw,sT=0,V=1,tide=0,tideT=0,maxE=3,lv=0,te=0,LB=[];
+const face={p:null,show:false,talk:false,mode:"bino"};
+function rs(){D=devicePixelRatio||1;W=innerWidth;H=innerHeight;cv.width=W*D;cv.height=H*D;g.setTransform(D,0,0,D,0,0)}addEventListener("resize",rs);rs();
+const wait=ms=>new Promise(r=>setTimeout(r,ms)),until=f=>new Promise(r=>{(function k(){f()?r():setTimeout(k,50)})()});
+function fadeTo(v,ms){return new Promise(r=>{const a=fade,s=performance.now();(function f(){const p=Math.min(1,(performance.now()-s)/ms);fade=a+(v-a)*p;p<1?requestAnimationFrame(f):r()})()})}
+function pick(list){return new Promise(res=>{ch.innerHTML="";list.forEach((c,k)=>{const b=document.createElement("button");b.textContent=c.t;if(c.cls)b.className=c.cls;b.onclick=()=>{ch.innerHTML="";res(k)};ch.appendChild(b)})})}
+function say(who,text,choices,o={}){return new Promise(res=>{
+ nm.textContent=who;bub.classList.add("on");bub.classList.toggle("weird",!!o.weird);ch.innerHTML="";clearInterval(tw);txt.textContent="";
+ let i=0;face.talk=!o.me;
+ const done=async()=>{face.talk=false;if(o.auto){await wait(o.auto);res(0)}else res(await pick(choices||[{t:"Continuar ▸"}]))};
+ tw=setInterval(()=>{i++;txt.textContent=text.slice(0,i);if(i>=text.length){clearInterval(tw);done()}},o.weird?45:26);
+ bub.onclick=()=>{if(i<text.length-1)i=text.length-1}})}
+function hud(n){$("#hud").textContent="Fase "+(lv+1)+"/5 · Barco "+n+"/"+LB.length+" · Erros "+"●".repeat(err)+"○".repeat(maxE-err)}
+
+const MARTA={skin:"#e0b08a",hair:"#2b1a14",cloth:"#2f5d7c",hp:1};
+const SK=["#f1c9a5","#e0b08a","#c98d62","#a8724a","#8a5a3a","#6b4228","#d8b9a0"];
+const QS=[["De onde vem?","O que leva a bordo?","Está sozinho?"],["Para onde vai?","Como está o mar?","Há quanto tempo navega?"],["Qual o nome do seu barco?","Tem documentos?","Por que tão tarde?"],["Já passou por aqui antes?","O que fez hoje?","Tem família?"],["Quando saiu do porto?","Viu algo estranho no caminho?","Pode falar de si?"]];
+const GR=[(c,b)=>"Boa noite, farol! "+c+", do "+b+". Posso passar?",(c,b)=>"Farol, aqui é "+c+", a bordo do "+b+". Peço passagem.",(c,b)=>"Ô de casa! "+c+", do "+b+". Dá pra liberar?"];
+const OK=["Valeu, vigia! Boa noite pra você.","Muito obrigado. O mar agradece.","Obrigado, farol. Até a próxima.","Que Deus te guarde, vigia."],PR=["Mas eu só queria passar...","Como assim? Eu não fiz nada!","Isso é um engano, vigia. Um engano!"],BAD=["Obrigado. Você não devia ter aberto.","Obrigada, Ícaro. Todos deixam.","Agora o farol também é nosso."],NO=["Ah. Tudo bem. Eu volto outra hora.","Entendi. Era só rotina, né?","Boa escolha. Eu também não passaria."];
+const rd=a=>a[Math.random()*a.length|0];
+function lvl(k,rows){return rows.map(r=>{const[bt,cap,col,l,an,a]=r;return{boat:bt,cap,col,an:an||undefined,sty:k,look:{skin:SK[l[0]],hair:l[1]||undefined,hat:l[2]||undefined,cloth:l[3],beard:l[4]||undefined,hood:l[5]||undefined,an:an||undefined},
+ greet:rd(GR)(cap,bt),qs:QS[k].map((q,n)=>[q,a[n]]),ok:rd(OK),protest:rd(PR),bad:rd(BAD),no:rd(NO)}})}
+const LV=[lvl(0,[
+["Santa Clara","Osvaldo Brito","#2d5a8a",[2,"#ddd","#1d3b6b","#7a5b2e","#ccc"],0,["Saí de Paraty ao entardecer. Pesca boa.","Sardinha e uma garrafa de café. Quer um gole?","Só eu e meu rádio velho."]],
+["Gaivota Azul","Rute Almeida","#3a6a6a",[6,"","","#334","","#222c38"],"holes",["Do porto. Do porto, claro.","Cartas. Cada uma tem um nome.","Estou. Quer dizer, estamos. Sempre estamos."]],
+["Estrela do Norte","Tadeu Ramos","#7a3b2e",[3,"","#555","#4a5a3a","#eee"],0,["Cabo Frio. Minha neta faz aniversário amanhã.","Rede, gelo e um motor que tosse.","Sozinho. O barco é velho que nem eu."]],
+["Maré Mansa","Jonas Pimentel","#556b4a",[6,"#222","","#6a7a5a",""],"stretch",["De lá. Sempre de lá.","Nada. Só eu mesmo. E um pouco de céu.","Sozinho. Meu pescoço dói quando o céu fica perto."]],
+["Anjo da Guarda","Lúcia Fontes","#8a4a5a",[4,"#1a1010","","#a04a4a",""],0,["De Arraial. Meu filho está com febre.","Cobertor, remédio e muito nervoso.","Com meu menino. Ele dorme no convés."]],
+["Pérola Negra","Heitor Camargo","#1a1a22",[3,"#3a2a1a","#222","#264653",""],"boat",["Quarenta dias de mar. Ou quarenta anos.","Provisão pouca. A água é a mesma por dentro.","Sozinho. Sempre sozinho."]],
+["Sereia","Ivone Matos","#5a3a6a",[2,"#7a2a2a","","#6b3a6b",""],"melt",["Do sul. Quase do sul.","Rotas de pesca. Rostos, quer dizer, rotas.","Somos três. Eu, eu e eu."]],
+["Brisa do Sul","Nilton Prado","#3b6e8f",[3,"#4a3a2a","#355","#5a6a7a",""],0,["De Angra. Levo material de pesca.","Anzol, rede e meu cunhado dormindo.","Com meu cunhado. Ronca que nem motor."]],
+["Lua Cheia","Cândido Lemos","#4a4a7a",[2,"#999","","#3a3a5a",""],"eyes",["Do leste. Eu vejo tudo daqui.","Lanternas. Muitas lanternas.","Estou vendo você muito bem."]],
+["Rosa dos Ventos","Neide Barros","#8a5a3a",[3,"#bbb","","#6a3a4a",""],0,["De Búzios. Venho do mercado.","Camarão e pão de queijo. Aceita um?","Há trinta anos. Sozinha, mas contente."]]]),
+lvl(1,[
+["Netuno","Valdir Souza","#5a6a3a",[3,"#333","#764","#5a4a2a","#aaa"],0,["Macaé, entregar peixe congelado.","Mexido, mas segura.","Trinta anos. Comecei com meu pai."]],
+["Iara Dourada","Beatriz Quintela","#c9a23a",[0,"#a33","","#244",""],"eyes",["Para Vitória. Todo mundo vai.","Calmo. Tão calmo que dá para ver o fundo.","Desde sempre, acho. Perdi a conta das noites."]],
+["São Jorge","Ademar Lopes","#7a2a2a",[4,"","#111","#444","#222"],0,["Santos. Cheguei atrasado, o motor falhou.","Bom. Sem ondas fortes.","Vinte e dois anos de estrada d água."]],
+["Tempestade","Cecília Brandão","#2a5a7a",[1,"#5a3a2a","","#335",""],"stretch",["Para o norte. Tenho um compromisso.","Calmo, mas o céu parece perto demais.","Poucos dias. Ou muitos. Perdi a noção."]],
+["Boa Esperança","Domingos Veloso","#6a4a2a",[5,"#222","#cc4","#6a6a3a",""],0,["Cabo Frio. Levo gelo e sal.","Um pouco agitado, nada demais.","Desde menino. Meu avô me ensinou."]],
+["Dente de Tubarão","Raimundo Alves","#3a3a3a",[2,"#444","#222","#333","#555"],"boat",["Para onde a maré mandar.","O mar está parado. Sempre parado perto de mim.","Desde antes da sua idade."]],
+["Estrela-do-Mar","Priscila Nogueira","#a04a2a",[3,"#222","","#9a4",""],"melt",["Para Búzios. Visitar a família.","Ótimo. Quase não molha.","Dois anos. Ou dois dias."]],
+["Girassol","Eurico Mendes","#d0a030",[1,"#ccc","#a82","#753",""],0,["Ilhabela. Pescaria de domingo.","Bom, a lua ajuda.","Aposentado, navego por hobby."]],
+["Cobra Coral","Marlene Tavares","#8a2a3a",[6,"#999","","#323","","#2a2a34"],"holes",["Para onde você mandar.","Fala sozinho quando a noite fecha.","Desde que a água é água."]],
+["Vento Leste","Fabrício Gouveia","#4a7a8a",[3,"#222","","#468",""],0,["Rio das Ostras, entrega de peças.","Tranquilo hoje.","Dez anos, sempre nesta rota."]]]),
+lvl(2,[
+["Sol Nascente","Zé Lindolfo","#b08a4a",[4,"#222","#da6","#c55",""],0,["Sol Nascente, herança do meu pai.","Aqui na sacola. Um pouco molhados.","Camarão só dá de noite."]],
+["Saudade","Ana Clara Silveira","#9a6a4a",[2,"#321","","#7a6",""],"voice",["Saudade. Saudade eu já disse, né?","Perdi. Quer dizer, nunca tive.","Porque a noite me acha primeiro."]],
+["Flor do Mar","Ricardo Aguiar","#6a8a5a",[3,"#432","#fa6","#56a",""],0,["Flor do Mar. Minha esposa quem escolheu.","Tenho cópia no celular. Quer ver?","Perdi a hora jantando na vila."]],
+["Jangadeiro","Osmar Tinoco","#8a7a3a",[5,"#111","#885","#a63","#333"],"stretch",["Jangadeiro. Pode escrever com J.","Todos. Cada papel, cada pessoa.","Porque a luz do farol me chamou."]],
+["Peixe-Espada","Marta Lúcia Pinho","#4a6a7a",[1,"#a62","","#945",""],0,["Peixe-Espada. Meu filho pintou o nome.","Na caixa de isopor, no plástico.","Fiquei esperando a maré virar."]],
+["Aurora","Jair Bernardes","#a04a4a",[4,"","#aa8","#575","#ccc"],"boat",["Aurora. Aurora de trás pra frente é... Aurora.","Documentos? Tenho. Tinha.","A hora não existe lá fora."]],
+["Maria Bonita","Léa Cavalcanti","#6a5a8a",[2,"#612","","#a49",""],"holes",["Maria Bonita, como a cangaceira.","Meu nome está em todos, acho.","Porque ninguém notaria."]],
+["Tubarão-Martelo","Wellington Reis","#4a5a6a",[3,"#555","#468","#a66","#444"],0,["Tubarão-Martelo, por causa do casco.","Na capa plástica, pode olhar.","Atrasei por causa do motor de popa."]],
+["Estrela Guia","Irene Falcão","#7a7a3a",[0,"#ddd","","#468",""],"melt",["Estrela Guia. Ela fala comigo.","O que for preciso. Eu me ajeito.","Porque de noite a gente se encaixa melhor."]],
+["Pé de Vento","Gilmar Furtado","#5a8a6a",[4,"#222","#ee8","#865",""],0,["Pé de Vento, igual meu cavalo antigo.","Aqui, pode conferir.","Vim de longe. A jangada é lenta."]]]),
+lvl(3,[
+["Delphine","Antônio Villar","#e8e8f0",[0,"#ddd","#fff","#237","#eee"],0,["Todo verão, desde 2009.","Joguei golfe e depois fui velejar.","Esposa e dois netos em terra."]],
+["Bossa Nova","Isadora Penteado","#f0e6d8",[1,"#a64","","#e55",""],"voice",["Todo verão. Todo verão desta noite.","Trabalhei. Ou fingi trabalhar.","Todos estão em casa. Sempre estão."]],
+["Dolce Vita","Maurício Fontoura","#dcd0c0",[2,"#222","#eee","#468",""],0,["Primeira vez, na verdade.","Reunião de manhã, regata à tarde.","Casado, sem filhos. Um cachorro."]],
+["Brisa Eterna","Helena Ventura","#f2e2e2",[1,"#432","","#98a",""],"melt",["Já passei. Já passarei.","Esperei o sol sumir.","Tinha. Eles ficaram na água."]],
+["Aquarela","Rodolfo Bezerra","#b8d4e8",[3,"#654","#68a","#fff","#a98"],0,["Passei ano passado, na regata.","Fiquei no deck lendo.","Irmã e sobrinhos. Eles vêm amanhã."]],
+["Escuna do Rei","Teodoro Matoso","#3a4a6a",[0,"#ccc","#111","#fff","#ddd"],"stretch",["Sim. Contei suas lâmpadas.","Nada de mais. Observei você.","Todos que já passaram por aqui."]],
+["Sinfonia","Vera Tamoio","#d8e0f0",[2,"#843","","#7ab",""],0,["Duas vezes por mês, rumo a Angra.","Dei aula de yoga no convés.","Duas filhas. Uma delas no leme."]],
+["Cisne Branco","Aurélio Pacheco","#f0f0f0",[0,"#ddd","#fe8","#136","#fff"],"eyes",["Todos os anos. Faz bem para o olho.","Fiquei vigiando o horizonte.","Ninguém. Mais ninguém."]],
+["Pôr do Sol","Daniela Moraes","#f4d8c0",[3,"#222","","#e84",""],0,["Nunca. Foi o GPS que me trouxe.","Spa de manhã, vela à tarde.","Marido e filho adolescente, no camarote."]],
+["Neblina","Kléber Santana","#bcc8d0",[4,"#111","#777","#357","#555"],"holes",["Muitas vezes. Esqueci quantas.","Dormi o dia todo. Acordei agora.","Tinha uma. Não lembro o rosto."]]]),
+lvl(4,[
+["Almirante Barroso","Cap. Horácio Veiga","#2a3a4a",[2,"#aaa","#123","#235","#fff"],0,["Ontem à tarde. Sete horas de viagem.","Só um cardume gigante. Lindo.","Trinta anos na Marinha Mercante."]],
+["Cidade de Santos","Cmte. Elvira Sá","#4a2a2a",[1,"#654","#111","#333",""],"voice",["Ontem. Ou amanhã, o relógio discorda.","Nada. Nem uma onda.","Sou a comandante. Isso basta."]],
+["Vapor Imperatriz","Cap. Sérgio Valadão","#3a4a3a",[3,"#555","#222","#464","#bbb"],0,["Hoje cedo. Quatro horas, pelo mapa.","Uma tartaruga enorme boiando.","Casado, avô, torcedor do Fluminense."]],
+["Fortuna","Cap. Isabel Ferraz","#5a5a6a",[0,"#a54","#223","#336",""],"melt",["Quando a névoa abriu.","Nada que eu lembre.","Isabel. Ou era outro nome, antes."]],
+["São Sebastião","Cmte. Plínio Arruda","#4a3a2a",[4,"#222","#443","#654","#333"],0,["Antes do almoço. Cargas leves.","Outro vapor, que sumiu na curva.","Plínio. Trabalho nesta linha há vinte anos."]],
+["Estrela Polar","Cap. Augusto Mello","#222a38",[2,"#999","#223","#134","#eee"],"boat",["Já estou aqui desde antes de você chegar.","Você. Você parece estranho de longe.","Sou o capitão. Sempre fui o capitão."]],
+["Bela Vista","Cap. Ludmila Prado","#6a5a4a",[1,"#321","#fed","#a85",""],0,["De manhã. Trouxe turistas para Paraty.","Algumas luzes ao longe. Pescadores.","Ludmila, filha de marinheiro."]],
+["Titã do Sul","Cmte. Bento Calhau","#3a2a2a",[3,"#444","#111","#533","#444"],"stretch",["Ainda não saí.","Os outros navios, todos parados.","Bento. Pode me chamar do que quiser."]],
+["Vigilante","Cap. Murilo Casagrande","#4a5a6a",[0,"#bbb","#245","#468","#aaa"],0,["Perto do meio-dia. Navegação tranquila.","Nada, só gaivotas.","Murilo. Piloto há duas décadas."]],
+["Ilha Perdida","Cmte. Sônia Frota","#2a3a3a",[2,"#222","","#243",""],"holes",["De uma ilha que não existe.","Várias luzes, todas apagadas.","Sônia. Se eu lembrar do resto, aviso."]]])];
+function face2(x,y,r,p,t,talk){
+ g.save();g.translate(x,y);g.scale(r/100,r/100);const an=p.an;g.translate(0,Math.sin(t*1.6)*2);
+ g.fillStyle=p.cloth;g.beginPath();g.moveTo(-120,170);g.quadraticCurveTo(-110,95,-34,88);g.lineTo(34,88);g.quadraticCurveTo(110,95,120,170);g.fill();
+ const st=an==="stretch",hh=st?78+40*V:78,hw=st?58-8*V:58,cy=st?-12-40*V:-12;
+ g.fillStyle=p.skin;g.fillRect(-18,cy+hh-20,36,60);
+ if(p.hood){g.fillStyle=p.hood;g.beginPath();g.ellipse(0,cy,hw+16,hh+14,0,0,7);g.fill()}
+ g.fillStyle=p.skin;g.beginPath();g.ellipse(0,cy,hw,hh,0,0,7);g.fill();
+ if(an==="melt"){g.save();g.globalAlpha=.3+.7*V;const w=Math.sin(t*2)*3;g.beginPath();g.ellipse(32+w,cy-54,34,40,.4,0,7);g.fill();
+  [-34,-10,16,40].forEach((i,k)=>{g.beginPath();g.ellipse(i,cy+hh-2+Math.sin(t*1.5+i)*4,6,22+k*7%20,0,0,7);g.fill()});
+  g.fillStyle="rgba(120,40,40,.35)";g.beginPath();g.ellipse(-20,cy+20,32,42,0,0,7);g.fill();
+  g.fillStyle="#fff";g.beginPath();g.ellipse(36+w,cy-56,9,6,0,0,7);g.fill();g.fillStyle="#111";g.beginPath();g.arc(36+w,cy-56,3,0,7);g.fill();g.restore()}
+ if(p.beard){g.fillStyle=p.beard;g.beginPath();g.ellipse(0,cy+hh*.55,hw*.85,hh*.42,0,0,Math.PI);g.fill()}
+ if(p.hair){g.fillStyle=p.hair;g.beginPath();g.ellipse(0,cy-hh*.3,hw+3,hh*.75,0,Math.PI,0);g.fill()}
+ if(p.hat){g.fillStyle=p.hat;g.beginPath();g.ellipse(0,cy-hh*.45,hw+4,hh*.5,0,Math.PI,0);g.fill();g.fillRect(-hw-12,cy-hh*.45-2,2*hw+24,9)}
+ const ey=cy-hh*.08,lx=st?0:Math.sin(t*.7)*3,bl=t%4.3<.12?.12:1;
+ [-1,1].forEach(s=>{let rx=14,ry=9,yy=ey;if(an==="melt"){if(s<0){rx=14+6*V;ry=9+6*V;yy+=14*V}else{rx=14-5*V;ry=9-3*V;yy-=4*V}}
+  g.fillStyle="#fff";g.beginPath();g.ellipse(s*24,yy,rx,ry*bl,0,0,7);g.fill();
+  g.fillStyle="#111";g.beginPath();g.arc(s*24+lx,yy,st?3:ry*.55,0,7);g.fill()});
+ if(an==="eyes"){const e=.55+.45*V;g.save();g.globalAlpha=.3+.7*V;g.fillStyle="#fff";g.beginPath();g.ellipse(0,ey-hh*.42,13*e,9*e*bl,0,0,7);g.fill();g.fillStyle="#111";g.beginPath();g.arc(Math.sin(t*1.3)*4,ey-hh*.42,5*e,0,7);g.fill();g.fillStyle="#fff";g.beginPath();g.ellipse(-42,ey+26,7*e,5*e,0,0,7);g.fill();g.fillStyle="#111";g.beginPath();g.arc(-42,ey+26,2.5*e,0,7);g.fill();g.restore()}
+ g.strokeStyle="rgba(0,0,0,.28)";g.lineWidth=3;g.beginPath();g.moveTo(0,ey+4);g.lineTo(-5,ey+hh*.28);g.lineTo(5,ey+hh*.28);g.stroke();
+ const my=cy+hh*.52,op=talk?Math.abs(Math.sin(t*14))*9:1.5;g.fillStyle="#3a1414";
+ if(st){g.beginPath();g.ellipse(0,my,46,3+(talk?op*2.4:6),0,0,Math.PI);g.fill();g.fillStyle="#eee";g.fillRect(-40,my,80,4)}
+ else if(an==="melt"){g.save();g.rotate(-.35);g.beginPath();g.ellipse(-6,my+8,20,op+3,0,0,7);g.fill();g.restore()}
+ else{g.beginPath();g.ellipse(0,my,13,op+1.5,0,0,7);g.fill()}
+ if(an==="holes"){g.save();g.globalAlpha=.3+.7*V;[[-30,-30,9],[24,-18,12],[-8,6,7],[34,14,8],[-22,30,10],[6,-42,6],[0,34,5],[-40,0,6]].forEach((h,i)=>{
+  const rr=h[2]*(.4+.6*V)*(1+.1*Math.sin(t*3+i)),gx=h[0]*hw/58,gy=cy+h[1]*hh/78,gr=g.createRadialGradient(gx,gy,0,gx,gy,rr);
+  gr.addColorStop(0,"#000");gr.addColorStop(.7,"#0a0305");gr.addColorStop(1,"#4a1218");g.fillStyle=gr;g.beginPath();g.arc(gx,gy,rr,0,7);g.fill();
+  g.fillStyle="#2a0a10";for(let k=0;k<3;k++){g.beginPath();g.arc(gx+Math.cos(k*2+i)*rr*.4,gy+Math.sin(k*2+i)*rr*.4,rr*.18,0,7);g.fill()}});g.restore()}
+ if(p.hp){g.strokeStyle="#222";g.lineWidth=7;g.beginPath();g.arc(0,cy,hw+8,Math.PI*1.05,Math.PI*1.95);g.stroke();g.fillStyle="#222";g.fillRect(-hw-16,cy-14,16,34);g.fillRect(hw,cy-14,16,34);g.lineWidth=3;g.beginPath();g.moveTo(-hw-10,cy+20);g.quadraticCurveTo(-hw,my+30,-14,my+4);g.stroke()}
+ g.restore()}
+function portrait(x,y,r,mode){
+ g.save();g.beginPath();g.arc(x,y,r,0,7);g.clip();
+ const bg=g.createRadialGradient(x,y,0,x,y,r);bg.addColorStop(0,mode==="radio"?"#0d2a22":"#16263d");bg.addColorStop(1,"#050a12");g.fillStyle=bg;g.fillRect(x-r,y-r,2*r,2*r);
+ face2(x,y+r*.12,r*1.15,face.p,T,face.talk);
+ if(mode==="radio"){g.fillStyle="rgba(80,255,170,.07)";g.fillRect(x-r,y-r,2*r,2*r);g.fillStyle="rgba(0,0,0,.25)";for(let k=y-r;k<y+r;k+=4)g.fillRect(x-r,k+(T*30%4),2*r,1.5);if(Math.random()<.06){g.fillStyle="rgba(255,255,255,.12)";g.fillRect(x-r,y-r+Math.random()*2*r,2*r,5)}}
+ else{g.strokeStyle="rgba(255,255,255,.2)";g.lineWidth=1;g.beginPath();g.moveTo(x-r,y);g.lineTo(x+r,y);g.moveTo(x,y-r);g.lineTo(x,y+r);g.stroke()}
+ const v=g.createRadialGradient(x,y,r*.6,x,y,r);v.addColorStop(0,"#0000");v.addColorStop(1,"#000d");g.fillStyle=v;g.fillRect(x-r,y-r,2*r,2*r);g.restore();
+ g.strokeStyle="#0b0f17";g.lineWidth=r*.09;g.beginPath();g.arc(x,y,r,0,7);g.stroke()}
+
+const ST=Array.from({length:90},()=>[Math.random(),Math.random()*.55,Math.random()*6]);
+function sky(){const gr=g.createLinearGradient(0,0,0,H);gr.addColorStop(0,"#030612");gr.addColorStop(.62,"#0f2036");gr.addColorStop(1,"#08121f");g.fillStyle=gr;g.fillRect(0,0,W,H);
+ g.fillStyle="#fff";ST.forEach(s=>{g.globalAlpha=.4+.6*Math.abs(Math.sin(T+s[2]));g.fillRect(s[0]*W,s[1]*H,1.6,1.6)});g.globalAlpha=1;
+ g.shadowColor="#bcd";g.shadowBlur=40;g.fillStyle="#f3efe0";g.beginPath();g.arc(W*.78,H*.14,Math.min(W,H)*.06,0,7);g.fill();g.shadowBlur=0}
+function sea(){const hz=H*.58,gr=g.createLinearGradient(0,hz,0,H);gr.addColorStop(0,"#0e2a44");gr.addColorStop(1,"#04101c");g.fillStyle=gr;g.fillRect(0,hz,W,H-hz);
+ for(let k=1;k<15;k++){const y=hz+Math.pow(k,1.55)*H/260,a=1+k*.35;g.strokeStyle="rgba(140,190,230,"+(.07+k*.01)+")";g.lineWidth=1+k*.1;g.beginPath();for(let x=0;x<=W;x+=12){const yy=y+Math.sin(x*.02+T*(1+k*.1)+k)*a;x?g.lineTo(x,yy):g.moveTo(x,yy)}g.stroke()}
+ g.fillStyle="rgba(240,235,210,.18)";for(let k=0;k<14;k++){const y=hz+4+k*k*.5+k*3;g.fillRect(W*.78+Math.sin(T*2+k)*(4+k*2)-(30-k)/2,y,30-k,2)}}
+function dock(){sky();sea();const bh=boat&&boat.st==="leave";if(bh)drawBoat(boat);
+ const bw=Math.min(W*.3,210),x=W*.1,base=H*.62,top=-H*.2,lw=y=>bw*(.7+.3*(y-top)/(base-top));
+ g.save();const a=.5+Math.sin(T*.4)*.35,L=2000,bg=g.createLinearGradient(x,-10,x+Math.cos(a)*L,Math.sin(a)*L);bg.addColorStop(0,"rgba(255,244,200,.3)");bg.addColorStop(1,"rgba(255,244,200,0)");
+ g.fillStyle=bg;g.beginPath();g.moveTo(x,-10);g.lineTo(x+Math.cos(a-.07)*L,Math.sin(a-.07)*L);g.lineTo(x+Math.cos(a+.07)*L,Math.sin(a+.07)*L);g.fill();g.restore();
+ for(let i=0;i<9;i++){const y0=top+i*(base-top)/9,y1=y0+(base-top)/9;g.fillStyle=i%2?"#a8323a":"#d8dbe0";g.beginPath();g.moveTo(x-lw(y0)/2,y0);g.lineTo(x+lw(y0)/2,y0);g.lineTo(x+lw(y1)/2,y1);g.lineTo(x-lw(y1)/2,y1);g.fill()}
+ const sh=g.createLinearGradient(x-bw/2,0,x+bw/2,0);sh.addColorStop(0,"#0000");sh.addColorStop(1,"#000a");g.fillStyle=sh;g.fillRect(x-bw/2,0,bw,base);
+ g.fillStyle="#1a0f08";g.beginPath();g.moveTo(x-bw*.12,base);g.lineTo(x-bw*.12,base-bw*.3);g.arc(x,base-bw*.3,bw*.12,Math.PI,0);g.lineTo(x+bw*.12,base);g.fill();
+ g.fillStyle="#1c1510";g.fillRect(0,base,W*.38,H-base);g.strokeStyle="#0006";g.lineWidth=2;for(let k=0;k<12;k++){g.beginPath();g.moveTo(k*W*.034,base);g.lineTo(k*W*.034-30,H);g.stroke()}
+ g.fillStyle="#120c08";g.fillRect(W*.38-6,base,10,H-base);
+ if(boat&&!bh)drawBoat(boat);water()}
+function water(){if(tide<.01)return;const top=H-tide*H*.44,y=x=>top+Math.sin(x*.03+T*2)*5+Math.sin(x*.011-T*1.3)*4;
+ g.beginPath();g.moveTo(0,y(0));for(let x=12;x<=W+12;x+=12)g.lineTo(x,y(x));g.strokeStyle="rgba(180,220,245,.55)";g.lineWidth=3;g.stroke();
+ g.lineTo(W+12,H+10);g.lineTo(0,H+10);g.closePath();const gr=g.createLinearGradient(0,top,0,H);gr.addColorStop(0,"rgba(18,70,105,.8)");gr.addColorStop(1,"rgba(4,18,34,.92)");g.fillStyle=gr;g.fill()}
+function hullP(){g.beginPath();g.moveTo(-100,-8);g.lineTo(110,-16);g.quadraticCurveTo(100,30,70,34);g.lineTo(-72,34);g.quadraticCurveTo(-92,14,-100,-8);g.closePath()}
+function drawBoat(o){const b=o.b,an=b.an,s=Math.min(W,H)/600,y=H*.63,bob=Math.sin(T*1.5+o.ph)*3*(an==="boat"?1-V:1),tl=Math.sin(T*1.2+o.ph)*.035*(an==="boat"?1-V:1);
+ g.save();g.globalAlpha=o.alpha;g.translate(o.x,y+bob);g.scale(s,s);
+ if(an!=="boat"||V<.5){g.strokeStyle="rgba(220,235,255,.35)";g.lineWidth=2;for(let k=0;k<3;k++){g.beginPath();g.ellipse(100+k*26,32,16+k*14,3+k,0,0,Math.PI);g.stroke()}
+  g.save();g.translate(0,34);g.scale(1,-.45);g.globalAlpha=o.alpha*.2;hullP();g.fillStyle=b.col;g.fill();g.restore()}
+ g.rotate(tl);const sty=b.sty|0,lamp=an==="boat"&&V>.4?(Math.sin(T*9)>0?"#ff3030":"#400"):"#ffd86a";
+ if(sty===2){g.fillStyle=b.col;g.fillRect(-92,-2,196,18);g.strokeStyle="#0005";g.lineWidth=2;for(let k=-80;k<100;k+=22){g.beginPath();g.moveTo(k,-2);g.lineTo(k,16);g.stroke()}g.fillStyle="#e8e4d4";g.fillRect(-92,16,196,3)}
+ else{g.save();if(sty===4)g.scale(1.15,1.25);if(sty===3)g.scale(1.1,.8);hullP();g.fillStyle=b.col;g.fill();g.clip();g.fillStyle=sty===3?"#c9a23a":"#e8e4d4";g.fillRect(-120,4,260,5);g.restore()}
+ 
+ if(sty===0){g.fillStyle="#c9c2ad";g.fillRect(52,-40,50,34);g.fillStyle=an==="boat"&&V>.4?(Math.sin(T*9)>0?"#ff3030":"#400"):"#ffd86a";g.fillRect(62,-30,14,12);
+ g.strokeStyle="#5a4632";g.lineWidth=4;g.beginPath();g.moveTo(30,-8);g.lineTo(30,-125);g.stroke();
+ g.beginPath();if(an==="boat"){g.fillStyle="rgb("+(236-226*V|0)+","+(230-220*V|0)+","+(210-196*V|0)+")";g.moveTo(30,-118);g.lineTo(-52,-118);g.lineTo(30,-30)}else{g.fillStyle="#ece6d2";g.moveTo(26,-118);g.lineTo(26,-24);g.lineTo(-52,-22)}g.fill();
+ }
+ else if(sty===1){g.fillStyle="#c9c2ad";g.fillRect(-22,-64,84,58);g.fillStyle=b.col;g.fillRect(-26,-70,92,8);g.fillStyle="#8a8f96";g.fillRect(34,-96,14,28);g.fillStyle=lamp;g.fillRect(-10,-52,16,14);g.fillRect(22,-52,16,14);g.strokeStyle="#5a4632";g.lineWidth=4;g.beginPath();g.moveTo(84,-10);g.lineTo(84,-72);g.lineTo(104,-34);g.stroke()}
+ else if(sty===2){g.strokeStyle="#5a4632";g.lineWidth=4;g.beginPath();g.moveTo(0,-2);g.lineTo(0,-118);g.stroke();g.fillStyle="#e8dcc0";g.fillRect(-40,-112,80,60);g.fillStyle=b.col;g.fillRect(-40,-90,80,12);g.fillStyle=lamp;g.fillRect(70,-12,10,10)}
+ else if(sty===3){g.strokeStyle="#bbb";g.lineWidth=3;g.beginPath();g.moveTo(20,-8);g.lineTo(20,-150);g.stroke();g.fillStyle="#f4f4ee";g.beginPath();g.moveTo(24,-146);g.lineTo(24,-18);g.lineTo(-60,-18);g.fill();g.fillStyle="#dcdcd4";g.beginPath();g.moveTo(30,-120);g.lineTo(104,-14);g.lineTo(30,-14);g.fill();g.fillStyle="#fff";g.fillRect(56,-30,34,16);g.fillStyle=lamp;g.fillRect(64,-26,10,7)}
+ else{g.fillStyle="#d8d4c4";g.fillRect(-40,-62,134,52);g.fillStyle=b.col;g.fillRect(-46,-68,146,8);g.fillStyle=lamp;for(let k=0;k<6;k++)g.fillRect(-28+k*20,-48,10,10);g.fillStyle="#2a2a2a";g.fillRect(-6,-112,22,46);g.fillRect(38,-112,22,46);g.fillStyle="#c33";g.fillRect(-6,-96,22,8);g.fillRect(38,-96,22,8)}
+ g.fillStyle=an==="boat"&&V>.4?"rgba(255,40,40,"+(.6+.4*Math.sin(T*6))+")":"#ffd86a";g.shadowColor=g.fillStyle;g.shadowBlur=14;g.beginPath();g.arc(-96,-14,4,0,7);g.fill();g.shadowBlur=0;
+ const l=b.look;g.fillStyle=l.cloth;g.fillRect(-78,-36,16,30);g.fillStyle=l.skin;g.beginPath();
+ if(an==="stretch")g.ellipse(-70,-44-10*V,6,9+11*V,0,0,7);else g.ellipse(-70,-44,8,9,0,0,7);g.fill();
+ if(an==="holes"){g.fillStyle="rgba(0,0,0,"+(.2+.8*V)+")";[[-72,-47],[-67,-43],[-73,-40],[-68,-49]].forEach(h=>{g.beginPath();g.arc(h[0],h[1],2,0,7);g.fill()})}
+ if(an==="melt"){g.fillStyle=l.skin;g.beginPath();g.ellipse(-62,-55,6,7,0,0,7);g.fill();g.fillRect(-74,-37,3,12+Math.sin(T*3)*3)}
+ if(l.hat&&(!an||an==="voice")){g.fillStyle=l.hat;g.fillRect(-79,-54,18,6)}
+ g.fillStyle="#fff";g.font="bold 11px system-ui";g.textAlign="center";g.save();g.translate(0,23);if(an==="boat"&&V>.5)g.scale(-1,1);g.fillText(b.boat.toUpperCase(),0,0);g.restore();g.restore()}
+function stairs(){const t=T-sT,cx=W/2,cy=H*.5,R=Math.max(W,H)*.8,N=22,ph=(t*1.6)%1;g.fillStyle="#05070b";g.fillRect(0,0,W,H);
+ for(let i=N;i>=0;i--){const d=i-ph,r=R/(1+d*.38),ri=r*.34,a=d*.42+t*.35,l=Math.max(6,40-d*2);
+  g.beginPath();g.arc(cx,cy,r,a,a+.42);g.arc(cx,cy,ri,a+.42,a,true);g.closePath();g.fillStyle="hsl(28,22%,"+l+"%)";g.fill();
+  g.lineWidth=Math.max(1,r*.012);g.strokeStyle="hsl(28,30%,"+(l+14)+"%)";g.beginPath();g.arc(cx,cy,r,a,a+.42);g.stroke();
+  g.strokeStyle="rgba(0,0,0,.45)";g.beginPath();g.moveTo(cx+Math.cos(a)*ri,cy+Math.sin(a)*ri);g.lineTo(cx+Math.cos(a)*r,cy+Math.sin(a)*r);g.stroke()}
+ const w=Math.max(0,Math.sin(t*1.9));g.fillStyle="rgba(120,170,255,"+w*.1+")";g.fillRect(0,0,W,H);
+ const v=g.createRadialGradient(cx,cy,Math.min(W,H)*.1,cx,cy,Math.max(W,H)*.7);v.addColorStop(0,"#000c");v.addColorStop(.15,"#0000");v.addColorStop(1,"#000e");g.fillStyle=v;g.fillRect(0,0,W,H)}
+function room(){g.fillStyle="#0a0f18";g.fillRect(0,0,W,H);g.strokeStyle="#ffffff08";g.lineWidth=2;for(let k=0;k<W;k+=48){g.beginPath();g.moveTo(k,0);g.lineTo(k,H);g.stroke()}
+ const wx=W*.2,wy=H*.52,wr=Math.min(W,H)*.15;g.save();g.beginPath();g.arc(wx,wy,wr,0,7);g.clip();const sg=g.createLinearGradient(0,wy-wr,0,wy+wr);sg.addColorStop(0,"#0a1626");sg.addColorStop(.5,"#16314d");sg.addColorStop(1,"#071522");g.fillStyle=sg;g.fillRect(wx-wr,wy-wr,2*wr,2*wr);
+ g.fillStyle="rgba(255,244,200,"+(.1+.1*Math.sin(T*.8))+")";g.fillRect(wx-wr,wy-wr,2*wr,2*wr);g.restore();g.strokeStyle="#2a2018";g.lineWidth=10;g.beginPath();g.arc(wx,wy,wr,0,7);g.stroke();
+ const lg=g.createRadialGradient(W*.85,H*.2,0,W*.85,H*.2,H*.6);lg.addColorStop(0,"rgba(255,190,90,.25)");lg.addColorStop(1,"#0000");g.fillStyle=lg;g.fillRect(0,0,W,H);
+ g.fillStyle="#1a120c";g.fillRect(0,H*.82,W,H*.18);
+ const cx=W/2,cy=H*.6,rw=Math.min(W*.8,520),rh=rw*.62;g.strokeStyle="#333";g.lineWidth=4;g.beginPath();g.moveTo(cx+rw*.35,cy-rh/2);g.lineTo(cx+rw*.42,cy-rh/2-70);g.stroke();
+ g.fillStyle="#2b3038";g.beginPath();g.roundRect(cx-rw/2,cy-rh/2,rw,rh,18);g.fill();g.strokeStyle="#4a525e";g.lineWidth=3;g.stroke();
+ g.fillStyle="#14181e";[-1,1].forEach(s=>{g.beginPath();g.arc(cx+s*rw*.38,cy+rh*.15,rh*.09,0,7);g.fill()});
+ g.fillStyle="#0a0c10";for(let k=0;k<5;k++)g.fillRect(cx-rw*.25,cy+rh*.3+k*7,rw*.5,3);
+ g.fillStyle=Math.sin(T*5)>0?"#ff4a3a":"#501";g.beginPath();g.arc(cx-rw*.3,cy-rh*.38,5,0,7);g.fill();
+ if(face.show)portrait(cx,cy-rh*.06,rh*.34,"radio")}
+function draw(){if(scene==="stairs")stairs();else if(scene==="room")room();else{dock();
+  if(face.show&&face.mode==="bino")portrait(W/2,H*.42,Math.min(W*.2,H*.13),"bino")}
+ if(fog>0){g.fillStyle="rgba(205,220,235,"+fog*.62+")";g.fillRect(0,H*.2,W,H*.8);for(let k=0;k<6;k++){const fx=((T*20*(k+1)+k*W/5)%(W*1.4))-W*.2,fy=H*(.35+k*.1),fr=Math.max(W,H)*.35,gr=g.createRadialGradient(fx,fy,0,fx,fy,fr);gr.addColorStop(0,"rgba(225,235,245,"+fog*.5+")");gr.addColorStop(1,"#0000");g.fillStyle=gr;g.fillRect(0,0,W,H)}}}
+let last=performance.now();
+function loop(now){const dt=Math.min(.05,(now-last)/1000);last=now;T+=dt;tide+=(tideT-tide)*Math.min(1,dt*1.2);
+ if(boat){const o=boat;if(o.st==="arrive"){o.x+=(W*.62-o.x)*Math.min(1,dt*1.3);if(Math.abs(o.x-W*.62)<4){o.x=W*.62;o.st="idle"}}
+  else if(o.st==="leave"){o.x-=260*dt;if(o.x<-300)boat=null}else if(o.st==="back"){o.x+=220*dt;if(o.x>W+300)boat=null}
+  else if(o.st==="vanish"){o.alpha-=dt*.45;fog=Math.min(1,fog+dt*1.5);if(o.alpha<=0){boat=null}}}
+ if(!boat&&fog>0)fog=Math.max(0,fog-dt*.35);
+ if(face.show&&face.p.an&&face.p.an!=="voice"&&Math.random()<.012*V)glitch=.25;
+ g.save();if(shake>0){g.translate((Math.random()-.5)*shake*14,(Math.random()-.5)*shake*14);shake=Math.max(0,shake-dt*1.2)}draw();g.restore();
+ if(glitch>0){glitch-=dt;for(let k=0;k<4;k++){const y=Math.random()*H,h=6+Math.random()*30;g.drawImage(cv,0,y*D,cv.width,h*D,(Math.random()-.5)*40,y,W,h)}}
+ if(fade>0){g.fillStyle="rgba(0,0,0,"+fade+")";g.fillRect(0,0,W,H)}requestAnimationFrame(loop)}
+requestAnimationFrame(loop);
+
+const M="Marta Valença (rádio)";
+async function intro(){scene="room";face.p=MARTA;face.mode="radio";face.show=true;await fadeTo(0,1200);
+ let k=await say(M,"Farol Ponta Seca, aqui é a Central da Costa. Está me ouvindo, Ícaro? Câmbio.",[{t:"Alto e claro, Marta."},{t:"Quem está falando?"}]);
+ if(k)await say(M,"Marta Valença, sua supervisora. Sim, a voz do rádio tem dono. Vamos ao que importa.");else await say(M,"Ótimo. Sinal limpo hoje, o que é raro.");
+ await say(M,"Esta é a sua primeira noite sozinho de vigia. Desça até o cais. Todo barco que quiser cruzar a costa vai parar na frente do farol.");
+ await say(M,"Converse com o capitão e decida: liberar ou barrar. Seja gentil, mas desconfie.");
+ k=await say(M,"Nem todo mundo no mar é... gente. Observe o rosto, a voz e o barco. Se algo estiver errado, barre.",[{t:"E se eu errar?"},{t:"Entendido."}]);
+ await say(M,(k?"Bom garoto. ":"Se barrar um inocente, a culpa é sua. Se liberar um deles, pior. ")+"Três erros e o mar leva o farol. Câmbio e desligo.");
+ face.show=false;bub.classList.remove("on");await fadeTo(1,800)}
+async function descend(){scene="stairs";sT=T;await fadeTo(0,700);
+ await say(M,"Desça, Ícaro. São 212 degraus. Eu fico na linha com você.",null,{auto:1800});
+ await say(M,"Cuidado com o último degrau. O mar subiu até aqui esta noite.",null,{auto:2200});
+ bub.classList.remove("on");await wait(1200);await fadeTo(1,900);scene="dock";await fadeTo(0,1500);
+ await say(M,"Chegou ao cais. O primeiro barco já está no radar. Câmbio.",null,{auto:1800})}
+async function handle(b,i){hud(i+1);boat={b,x:W+260,st:"arrive",alpha:1,ph:Math.random()*6};face.show=false;bub.classList.remove("on");ch.innerHTML="";
+ await until(()=>boat.st==="idle");face.p=b.look;face.mode="bino";face.show=true;const w={weird:false};
+ await say(b.cap,b.greet,null,w);const asked=[];let d;
+ while(true){const opts=b.qs.map((q,k)=>({t:"💬 "+q[0],k})).filter(o=>!asked.includes(o.k));
+  const c=await pick([...opts,{t:"✅ Liberar passagem",cls:"ok"},{t:"⛔ Barrar o barco",cls:"no"}]);
+  if(c<opts.length){const q=opts[c].k;asked.push(q);await say("Você (Ícaro)",b.qs[q][0],null,{me:1,auto:700});await say(b.cap,b.qs[q][1],null,w)}else{d=c-opts.length;break}}
+ let fb;
+ if(d===0){if(!b.an){await say(b.cap,b.ok);fb="Boa, Ícaro. Gente de verdade merece passagem."}
+  else{await say(b.cap,b.bad,null,{weird:1,auto:900});glitch=1;shake=1;err++;te++;tideT=err/maxE;fb="O rádio apagou quando ele passou, Ícaro. Aquele não era uma pessoa."}boat.st="leave"}
+ else{if(b.an){await say(b.cap,b.no,null,{weird:1,auto:900});boat.st="vanish";fb="Sumiu na névoa. Bom olho, Ícaro."}
+  else{await say(b.cap,b.protest);err++;te++;tideT=err/maxE;shake=.6;boat.st="vanish";fb="Era gente de verdade. A névoa levou o barco embora."}}
+ face.show=false;bub.classList.remove("on");hud(i+1);await until(()=>!boat);
+ await say(M,fb,null,{auto:2200});bub.classList.remove("on");await wait(600)}
+const VIS=[.6,.42,.3,.2,.12],MAXE=[3,3,3,3,2],TIP=["Pescadores. Os rostos ainda denunciam um pouco.","Pesqueiros maiores. A névoa engrossou.","Jangadas. Eles disfarçam melhor agora.","Iates. Quase humanos. Preste atenção no que dizem.","Vapores antigos. Quase não dá pra notar."];
+const CUT=[["Boa, Ícaro. Primeira fase vencida. A maré já recua dos degraus.","Sabe o que eram os que você barrou? Nem eu sei. Só sei que aparecem quando a névoa engrossa.","Daqui pra frente eles aprendem. Ficam mais parecidos com a gente. Câmbio."],
+["Segunda fase. Você está se saindo melhor que o último vigia.","Os pesqueiros grandes vêm com tripulação. Tripulação demais, às vezes.","Preste atenção no que dizem, não só em como falam. Detalhes pequenos entregam. Câmbio."],
+["Jangadas. Barcos do tempo do meu avô. Quase nunca saem de perto da costa.","Ícaro, você me ouve com clareza? A linha anda chiando. Parece que tem mais alguém ouvindo.","Esquece. Estou cansada, só isso. Falta pouco. Câmbio."],
+["Iates agora. Gente educada, gente rica. Eles aprendem a imitar boas maneiras.","A maré subiu mais do que devia nas últimas noites. O mar está com pressa.","Sabe, antes de você o farol tinha outro vigia. Ele também respondia sempre com educação. Câmbio."],
+["Amanheceu, Ícaro. Última fase vencida.","Prometi contar do vigia anterior. Ele também ouvia a minha voz no rádio. Eu dizia a ele que estava tudo bem.","Fui a primeira que ele deixou passar. Obrigada por me ouvir. Câmbio e desligo."]];
+function shuf(a){a=a.slice();for(let i=a.length-1;i>0;i--){const j=Math.random()*(i+1)|0;[a[i],a[j]]=[a[j],a[i]]}return a}
+async function cut(k){bub.classList.remove("on");ch.innerHTML="";await fadeTo(1,800);scene="room";face.p=MARTA;face.mode="radio";face.show=true;await fadeTo(0,800);
+ for(const l of CUT[k])await say(M,l);face.show=false;bub.classList.remove("on");await fadeTo(1,800);scene="dock";if(k<4)await fadeTo(0,900)}
+async function defeat(){bub.classList.remove("on");ch.innerHTML="";face.show=false;boat=null;tideT=2.6;for(let k=0;k<9;k++){shake=.9;glitch=.3;await wait(450)}await fadeTo(1,1200)}
+async function run(){await intro();await descend();let lost=false;
+ for(lv=0;lv<5&&!lost;lv++){V=VIS[lv];maxE=MAXE[lv];err=0;tideT=0;LB=shuf(LV[lv]);
+  await say(M,"Fase "+(lv+1)+" de 5. "+TIP[lv],null,{auto:2400});bub.classList.remove("on");
+  for(let i=0;i<LB.length&&err<maxE;i++)await handle(LB[i],i);
+  if(err>=maxE)lost=true;else await cut(lv)}
+ if(lost)await defeat();
+ $("#et").textContent=lost?"O MAR LEVOU O FAROL":te===0?"VIGIA PERFEITO":"AMANHECEU";
+ $("#ep").textContent=lost?"A maré subiu pela escada, degrau por degrau, até apagar a lanterna. Você caiu na fase "+lv+" de 5.":te===0?"Cinco fases, nenhum erro. Nenhuma anomalia cruzou a costa.":"Você sobreviveu às 5 fases com "+te+" erro"+(te>1?"s":"")+". O farol segue de pé, mas o mar anda falando seu nome.";
+ fade=.6;$("#end").style.display="flex"}
+$("#go").onclick=()=>{$("#ttl").style.display="none";run()};
+</script></body></html>
